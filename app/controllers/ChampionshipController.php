@@ -126,7 +126,7 @@ class ChampionshipController extends BaseController {
                 foreach($championship_count as $value){
                     $countData[$value->status] = $value->c_count;
                 }
-                if($countData['ready']==1)
+                if(array_key_exists('ready',$countData) && $countData['ready']==1)
                 {
                     $championship = Championship::where('status','ready')->get();
                     $championship = $championship->toArray();
@@ -154,7 +154,7 @@ class ChampionshipController extends BaseController {
                     }
 
                 }
-                elseif($countData['waiting']==1)
+                elseif(array_key_exists('waiting',$countData) && $countData['waiting']==1)
                 {
                     return Response::json('Waiting for other players to join.',202);
                 }
@@ -219,11 +219,11 @@ class ChampionshipController extends BaseController {
                         }
                     }
                     else{
-                        return Response::json('No match found to play. Please get the status of the game to play correct move.',412);
+                        return Response::json('No match found to play. Please get the status of the game to play correct move.',400);
                     }
                 }
                 else{
-                    return Response::json('Invalid Input. It should be a number and between 1 and 10.',412);
+                    return Response::json('Invalid Input. It should be a number and between 1 and 10.',400);
                 }
 
 
@@ -250,7 +250,7 @@ class ChampionshipController extends BaseController {
                 if(count($inputArray) == $player['defence_set_length']){
                     foreach($inputArray as $value){
                         if($value < 1 || $value > 10){
-                            return Response::json('One of the number is not valid. Numbers in the array should be between 1 and 10',412);
+                            return Response::json('One of the number is not valid. Numbers in the array should be between 1 and 10',400);
                         }
                     }
                     $pId = $player['id'];
@@ -303,11 +303,11 @@ class ChampionshipController extends BaseController {
                         }
                     }
                     else{
-                        return Response::json('No match found to play. Please get the status of the game to play correct move.',412);
+                        return Response::json('No match found to play. Please get the status of the game to play correct move.',400);
                     }
                 }
                 else{
-                    return Response::json('Invalid Input. Array should be of length '.$player['defence_set_length'],412);
+                    return Response::json('Invalid Input. Array should be of length '.$player['defence_set_length'],400);
                 }
             }
             else{
@@ -369,5 +369,48 @@ class ChampionshipController extends BaseController {
             $players[]['p_id'] = $game['winner'];
         }
         return $players;
+    }
+    public function championshipSummary()
+    {
+        $player = $this->validateUser(Input::get('name'),Input::get('password'));
+        Request::replace(array());
+        if($player)
+        {
+            $playerattr = File::get(public_path().'/playerattr.json');
+            $playerData = json_decode($playerattr,true);
+            $playerNames = array();
+            foreach($playerData as $value){
+                $playerNames[$value['id']] = $value['name'];
+            }
+            $championship = DB::table('championship')->orderBy('created_at', 'desc')->first();
+            $summary = array();
+            $summary['championship_status'] = $championship->status;
+            if($championship->status == 'complete'){
+                $summary['champion'] = $championship->winner;
+                $summary['champion_name'] = $playerNames[$championship->winner];
+            }
+
+            $games = Game::where(array('c_id' => $championship->id))->get();
+            $games = $games->toArray();
+            foreach($games as $key => $game){
+                $summary['games'][$game['level']][$key]['status'] = $game['status'];
+                if($game['status'] == 'complete'){
+                    $summary['games'][$game['level']][$key]['winner'] = $playerNames[$game['winner']];
+                }
+                $matches = Match::where(array('g_id' => $game['id']))->get();
+                $matches = $matches->toArray();
+                foreach($matches as $k => $match){
+                    $summary['games'][$game['level']][$key]['matches'][$k]['winner'] = $playerNames[$match['winner']];
+                    $summary['games'][$game['level']][$key]['matches'][$k]['player-1'] = $playerNames[$match['first_move']];
+                    $summary['games'][$game['level']][$key]['matches'][$k]['first_input'] = $match['first_input'];
+                    $summary['games'][$game['level']][$key]['matches'][$k]['player-2'] = $playerNames[$match['second_move']];
+                    $summary['games'][$game['level']][$key]['matches'][$k]['second_input'] = $match['second_input'];
+                }
+            }
+            return $summary;
+        }
+        else{
+            return Response::json('Invalid Credentials',401);
+        }
     }
 }

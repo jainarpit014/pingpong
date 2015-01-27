@@ -7,8 +7,7 @@ class GameController extends BaseController {
         $players = Input::get('players');
         $cId = Input::get('cid');
         $level = Input::get('level');
-//        if($level==0)
-//        {
+
             for($i=0;$i<count($players);$i++)
             {
                 $p1 = $players[$i]['p_id'];
@@ -18,7 +17,7 @@ class GameController extends BaseController {
                 Request::replace($request->input());
                 $response = Route::dispatch($request)->getContent();
             }
-//        }
+
         return "true";
     }
 }

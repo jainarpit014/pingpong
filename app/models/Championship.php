@@ -22,6 +22,6 @@ class Championship extends Eloquent implements UserInterface, RemindableInterfac
 	 * @var array
 	 */
 	//protected $hidden = array('password', 'remember_token');
-    protected $fillable = array('status');
+    protected $fillable = array('status','winner');
 
 }
