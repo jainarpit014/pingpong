@@ -24,9 +24,11 @@ Route::get('/', function()
 Route::post('auth_player','PlayerController@authPlayer');
 Route::post('create_championship','ChampionshipController@create');
 Route::post('join_championship','ChampionshipController@join');
+Route::post('create_game','GameController@add');
+Route::post('create_match','MatchController@add');
 //Route::post('championship_status','ChampionshipController@status');
-Route::post('player_status','');
-Route::post('offend','');
-Route::post('defend','');
+Route::post('player_status','ChampionshipController@playerStatus');
+Route::post('offend','MatchController@offend');
+Route::post('defend','MatchController@defend');
 
 
