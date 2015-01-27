@@ -89,9 +89,12 @@ class ChampionshipController extends BaseController {
         $players = ChampionshipPlayer::where('c_id',$cId)->get();
         return $players->toArray();
     }
-    public function changeStatus($cId,$status){
+    public function changeStatus($cId,$status,$winner=null){
         $championship = Championship::find($cId);
         $championship->status= $status;
+        if($status === 'complete'){
+            $championship->winner = $winner;
+        }
         $championship->save();
 
         if($status=='ready')
@@ -104,7 +107,7 @@ class ChampionshipController extends BaseController {
             return "true";
         }
 
-
+        return true;
     }
     public function playerStatus()
     {
@@ -191,5 +194,180 @@ class ChampionshipController extends BaseController {
         else{
             return false;
         }
+    }
+    public function offend()
+    {
+        $player = $this->validateUser(Input::get('name'),Input::get('password'));
+        $inputNumber = Input::get('input_number');
+        Request::replace(array());
+
+        if($player)
+        {
+            if($player['role']=="1")
+            {
+                if($inputNumber >= 1 && $inputNumber <= 10){
+                    $pId = $player['id'];
+                    $matchObj = Match::where(array('first_move'=>$pId,'winner'=>null,'first_input'=>null))->get();
+                    if(!$matchObj->isEmpty()){
+                        $matchObj[0]->first_input = $inputNumber;
+                        $saveResp = $matchObj[0]->save();
+                        if($saveResp){
+                            return Response::json('Your move has been saved. Wait while defender gives the array.',201);
+                        }
+                        else{
+                            return Response::json('Could not save your move. Please try again.',500);
+                        }
+                    }
+                    else{
+                        return Response::json('No match found to play. Please get the status of the game to play correct move.',412);
+                    }
+                }
+                else{
+                    return Response::json('Invalid Input. It should be a number and between 1 and 10.',412);
+                }
+
+
+            }
+            else{
+                return Response::json('You are not authorised to offend a game',401);
+            }
+        }
+        else{
+            return Response::json('Invalid Credentials',401);
+        }
+    }
+    public function defend()
+    {
+        $player = $this->validateUser(Input::get('name'),Input::get('password'));
+        $inputArrayData = Input::get('input_array');
+        Request::replace(array());
+
+        if($player)
+        {
+            if($player['role']=="1")
+            {
+                $inputArray = explode(',',$inputArrayData);
+                if(count($inputArray) == $player['defence_set_length']){
+                    foreach($inputArray as $value){
+                        if($value < 1 || $value > 10){
+                            return Response::json('One of the number is not valid. Numbers in the array should be between 1 and 10',412);
+                        }
+                    }
+                    $pId = $player['id'];
+                    $matchObj = Match::where(array('second_move'=>$pId,'winner'=>null,'second_input'=>null))->whereNotNull('first_input')->get();
+                    if(!$matchObj->isEmpty()){
+                        $matchObj[0]->second_input = $inputArrayData;
+                        $saveResp = $matchObj[0]->save();
+                        if($saveResp){
+                            if($this->decideMatchWinner($matchObj[0]->first_input,$inputArray)){
+                                $winner = $matchObj[0]->second_move;
+                            }
+                            else{
+                                $winner = $matchObj[0]->first_move;
+                            }
+                            $matchObj[0]->winner = $winner;
+                            $matchObj[0]->save();
+                            $firstMove = $matchObj[0]->first_move;
+                            $secondMove = $matchObj[0]->second_move;
+
+                            /*checking match status */
+                            $gId = $matchObj[0]->g_id;
+                            $matchStats = $this->getMatchStats($gId);
+                            $gameWinner = null;
+                            if(array_key_exists($firstMove,$matchStats) && $matchStats[$firstMove] == 5){
+                                $gameWinner = $firstMove;
+                            }
+                            if(array_key_exists($secondMove,$matchStats) && $matchStats[$secondMove] == 5){
+                                $gameWinner = $secondMove;
+                            }
+                            if($gameWinner){
+                                //update game winner and create new level if matches for all players are done
+                                $this->updateGameWinner($gId,$gameWinner);
+
+                            }
+                            else{
+                                $request = Request::create('create_match','POST',array('g_id'=>$gId,'first_move'=>$winner,'second_move'=>($winner == $secondMove) ? $firstMove : $secondMove));
+                                Request::replace($request->input());
+                                $response = Route::dispatch($request)->getContent();
+                            }
+                            if($winner == $pId){
+                                $respJson = array('message'=>'Congratulations, you have won this match. Get status for your next move.','win' => true);
+                            }
+                            else{
+                                $respJson = array('message'=>'Your move has been saved. Get status for your next move.','win' => false);
+                            }
+                            return Response::json($respJson,201);
+                        }
+                        else{
+                            return Response::json('Could not save your move. Please try again.',500);
+                        }
+                    }
+                    else{
+                        return Response::json('No match found to play. Please get the status of the game to play correct move.',412);
+                    }
+                }
+                else{
+                    return Response::json('Invalid Input. Array should be of length '.$player['defence_set_length'],412);
+                }
+            }
+            else{
+                return Response::json('You are not authorised to offend a game',401);
+            }
+        }
+        else{
+            return Response::json('Invalid Credentials',401);
+        }
+    }
+    public function decideMatchWinner($number,$array){
+        return in_array($number,$array);
+    }
+    public function getMatchStats($gameId){
+        $matchCountData = $users = DB::table('matches')
+            ->select(DB::raw('count(*) as count, winner'))
+            ->where(array('g_id' => $gameId))
+            ->groupBy('winner')
+            ->get();
+        $countData = array();
+        foreach($matchCountData as $value){
+            $countData[$value->winner] = $value->count;
+        }
+        return $countData;
+    }
+    public function updateGameWinner($gameId,$winner){
+        $gameObj = Game::find($gameId);
+        $gameObj->winner = $winner;
+        $gameObj->status = 'complete';
+        $gameObj->save();
+        //get game stats
+        $cId = $gameObj->c_id;
+        $level = $gameObj->level;
+        $emptyGame = $this->getGameStats($cId,$level);
+        if($emptyGame->isEmpty()){
+            //get game winners
+            $winners = $this->getGameWinners($cId,$level);
+            if($level == 2){
+                $this->changeStatus($cId,'complete',$winners[0]['p_id']);
+                return true;
+            }
+            else{
+                $request = Request::create('create_game','POST',array('cid'=>$cId,'level'=>$level+1,'players'=>$winners));
+                Request::replace($request->input());
+                $response = Route::dispatch($request)->getContent();
+                return true;
+            }
+        }
+    }
+    public function getGameStats($cId,$level){
+        $game = Game::where(array('c_id'=>$cId,'winner'=>null,'level'=>$level))->get();
+        return $game;
+    }
+    public function getGameWinners($cId,$level){
+        $games = Game::where(array('c_id'=>$cId,'level'=>$level))->get();
+        $games = $games->toArray();
+        $players = array();
+        foreach($games as $game){
+            $players[]['p_id'] = $game['winner'];
+        }
+        return $players;
     }
 }

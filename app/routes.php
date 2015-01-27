@@ -28,7 +28,7 @@ Route::post('create_game','GameController@add');
 Route::post('create_match','MatchController@add');
 //Route::post('championship_status','ChampionshipController@status');
 Route::post('player_status','ChampionshipController@playerStatus');
-Route::post('offend','MatchController@offend');
-Route::post('defend','MatchController@defend');
+Route::post('offend','ChampionshipController@offend');
+Route::post('defend','ChampionshipController@defend');
 
 
